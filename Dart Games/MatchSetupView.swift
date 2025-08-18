@@ -64,7 +64,7 @@ struct MatchSetupView: View {
             case .aroundTheWorld(let id):
                 AroundTheWorldLoaderView(matchID: id)   
             case .cricket(let id):
-                CricketPlaceholderView(matchID: id)          // stub for now
+                CricketLoaderView(matchID: id)          // stub for now
             }
         }
 
@@ -229,15 +229,20 @@ struct AroundTheWorldLoaderView: View {
     }
 }
 
-struct CricketPlaceholderView: View {
+struct CricketLoaderView: View {
+    @Environment(\.modelContext) private var context
     let matchID: UUID
+
     var body: some View {
-        VStack(spacing: 12) {
-            Text("Cricket scoring coming next.")
-            Text("Match \(matchID.uuidString.prefix(8))…")
-                .foregroundStyle(.secondary).font(.footnote)
-        }.padding()
+        if let match = try? context.fetch(
+            FetchDescriptor<Match>(predicate: #Predicate { $0.id == matchID })
+        ).first, let leg = match.legs.last {
+            CricketScoringView(match: match, leg: leg)
+        } else {
+            Text("Match not found.").foregroundStyle(.secondary)
+        }
     }
 }
+
 
 
