@@ -146,8 +146,8 @@ struct BaseballScoringView: View {
         guard !legIsOver else { return }
 
         let points = darts.reduce(0) { $0 + $1.multiplier }   // S=1, D=2, T=3, Miss=0
-        let seq = turnsSoFar
-        let inn = currentInning
+        _ = turnsSoFar
+        _ = currentInning
 
         let t = Turn(
             player: currentPlayer,
