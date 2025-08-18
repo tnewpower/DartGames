@@ -1,3 +1,11 @@
+//
+//  DashboardView.swift
+//  Dart Games
+//
+//  Created by Tony Newpower on 8/18/25.
+//
+
+
 import SwiftUI
 import SwiftData
 
@@ -19,7 +27,9 @@ struct DashboardView: View {
                                 MatchSetupView(gameType: type)
                             } label: {
                                 GameTile(title: type.displayName)
+                                    .contentShape(Rectangle())
                             }
+                            .buttonStyle(PlainButtonStyle())    
                         }
                     }
 

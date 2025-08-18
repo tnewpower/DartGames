@@ -1,3 +1,11 @@
+//
+//  X01ScoringView.swift
+//  Dart Games
+//
+//  Created by Tony Newpower on 8/18/25.
+//
+
+
 import SwiftUI
 import SwiftData
 
@@ -23,19 +31,24 @@ struct X01ScoringView: View {
             VStack(spacing: 8) {
                 ForEach(players) { p in
                     let rem = leg.remainingByPlayer[p.id] ?? (match.startingScore ?? 501)
-                    HStack {
-                        Text(p.name).bold()
+                    let isActive = (p.id == currentPlayer.id) && (leg.winner == nil)
+                    HStack(spacing: 12) {
+                        Image(systemName: "scope").opacity(isActive ? 1 : 0.15)
+                        Text(p.name)
+                            .fontWeight(isActive ? .semibold : .regular)
                         Spacer()
                         Text("\(rem)")
                             .monospacedDigit()
-                            .font(.title3)
-                            .foregroundStyle(p.id == currentPlayer.id ? .primary : .secondary)
+                            .font(isActive ? .title3.weight(.semibold) : .title3)
+                            .foregroundStyle(isActive ? .primary : .secondary)
                     }
+                    .activeHighlight(isActive)
                 }
             }
             .padding()
             .background(.thinMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 12))
+            .animation(.snappy, value: currentPlayerIndex)
 
             DartPad(darts: $darts)
 
@@ -75,7 +88,7 @@ struct X01ScoringView: View {
 
         if result.bust {
             // record a bust (score 0)
-            let t = Turn(player: currentPlayer, darts: darts, total: 0, bust: true)
+            let t = Turn(player: currentPlayer, darts: darts, total: 0, bust: true, sequence: leg.turns.count)
             leg.turns.append(t)
             darts.removeAll()
             message = "Bust! No score."
@@ -83,7 +96,7 @@ struct X01ScoringView: View {
         } else {
             let scored = darts.reduce(0) { $0 + $1.value }
             leg.remainingByPlayer[currentPlayer.id] = result.newRemaining
-            let t = Turn(player: currentPlayer, darts: darts, total: scored, bust: false)
+            let t = Turn(player: currentPlayer, darts: darts, total: scored, bust: false, sequence: leg.turns.count)
             leg.turns.append(t)
             darts.removeAll()
             message = "Scored \(scored)"

@@ -1,3 +1,11 @@
+//
+//  RulesView.swift
+//  Dart Games
+//
+//  Created by Tony Newpower on 8/18/25.
+//
+
+
 import SwiftUI
 
 // Entry point – choose the correct rules page for the game

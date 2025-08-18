@@ -1,3 +1,11 @@
+//
+//  GameType.swift
+//  Dart Games
+//
+//  Created by Tony Newpower on 8/18/25.
+//
+
+
 import Foundation
 import SwiftData
 
@@ -34,9 +42,11 @@ final class Match {
     var createdAt: Date
     var gameTypeRaw: String
     var players: [Player]
-    var legs: [Leg]
 
-    // X01 settings (extend per game as needed)
+    // ✅ NEW: keep the selection order stable
+    var playerOrder: [UUID]
+
+    var legs: [Leg]
     var startingScore: Int?
     var doubleOut: Bool
 
@@ -50,6 +60,7 @@ final class Match {
         self.createdAt = Date()
         self.gameTypeRaw = gameType.rawValue
         self.players = players
+        self.playerOrder = players.map { $0.id }   // ✅ freeze order here
         self.legs = []
         self.startingScore = startingScore
         self.doubleOut = doubleOut
@@ -85,14 +96,28 @@ final class Turn {
     var total: Int
     var bust: Bool
 
-    init(player: Player, darts: [Dart], total: Int, bust: Bool) {
+    // ✅ NEW: stable ordering + baseball inning
+    var createdAt: Date
+    var sequence: Int            // 0,1,2,... within the leg
+    var inning: Int?             // 1..9 for Baseball; nil for other games
+
+    init(player: Player,
+         darts: [Dart],
+         total: Int,
+         bust: Bool,
+         sequence: Int,
+         inning: Int? = nil) {
         self.id = UUID()
         self.player = player
         self.darts = darts
         self.total = total
         self.bust = bust
+        self.createdAt = Date()
+        self.sequence = sequence
+        self.inning = inning
     }
 }
+
 
 @Model
 final class Dart {

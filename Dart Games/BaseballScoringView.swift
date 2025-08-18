@@ -1,62 +1,108 @@
+//
+//  BaseballScoringView.swift
+//  Dart Games
+//
+//  Created by Tony Newpower on 8/18/25.
+//
+
+
 import SwiftUI
 import SwiftData
 
 struct BaseballScoringView: View {
     @Environment(\.modelContext) private var context
 
-    // Passed in by the loader
     @State var match: Match
     @State var leg: Leg
 
-    // Ephemeral input for the current turn (0–3 “hits”)
     @State private var darts: [Dart] = []
     @State private var message: String?
 
-    private var players: [Player] { match.players }
-    private var pCount: Int { players.count }
+    // Use frozen order from the match for absolute stability
+    private var orderedPlayers: [Player] {
+        let map = Dictionary(uniqueKeysWithValues: match.players.map { ($0.id, $0) })
+        let ordered = match.playerOrder.compactMap { map[$0] }
+        return ordered.isEmpty ? match.players : ordered
+    }
+    private var pCount: Int { orderedPlayers.count }
 
-    // Derived from existing turns (so resume works)
+    // Always reference the most recent number of recorded turns
     private var turnsSoFar: Int { leg.turns.count }
+
+    // Inning & batter based on count (not array order)
     private var currentInning: Int {
-        min(9, 1 + turnsSoFar / max(pCount, 1))
+        guard pCount > 0 else { return 1 }
+        return min(9, 1 + turnsSoFar / pCount)
     }
     private var currentPlayerIndex: Int {
-        pCount == 0 ? 0 : (turnsSoFar % pCount)
+        guard pCount > 0 else { return 0 }
+        return turnsSoFar % pCount
     }
     private var currentPlayer: Player {
-        players[currentPlayerIndex]
+        orderedPlayers[currentPlayerIndex]
     }
 
-    // Totals per player
+    // Use explicit inning+sequence for the grid (ignore any underlying reordering)
+    private var sortedTurns: [Turn] {
+        leg.turns.sorted { lhs, rhs in
+            if lhs.sequence != rhs.sequence { return lhs.sequence < rhs.sequence }
+            return lhs.createdAt < rhs.createdAt
+        }
+    }
+
+    private var boxScoreRows: [(player: Player, innings: [Int], total: Int)] {
+        guard pCount > 0 else { return [] }
+        var rows: [(Player, [Int])] = orderedPlayers.map { ($0, Array(repeating: 0, count: 9)) }
+
+        // Sum by stored inning per player
+        for t in sortedTurns {
+            guard let inn = t.inning, (1...9).contains(inn) else { continue }
+            if let rowIdx = orderedPlayers.firstIndex(where: { $0.id == t.player.id }) {
+                rows[rowIdx].1[inn - 1] += t.total
+            }
+        }
+        return rows.map { ($0.0, $0.1, $0.1.reduce(0, +)) }
+    }
+
     private var totalsByPlayer: [UUID: Int] {
         var map: [UUID: Int] = [:]
-        for t in leg.turns {
-            map[t.player.id, default: 0] += t.total
-        }
+        for row in boxScoreRows { map[row.player.id] = row.total }
         return map
+    }
+
+    private var legIsOver: Bool {
+        turnsSoFar >= (9 * max(pCount, 1)) || leg.winner != nil
     }
 
     var body: some View {
         VStack(spacing: 16) {
             header
 
-            // Scoreboard (totals so far)
+            // Totals strip
             VStack(spacing: 8) {
-                ForEach(players) { p in
-                    HStack {
+                ForEach(orderedPlayers) { p in
+                    let isActive = (p.id == currentPlayer.id) && !legIsOver
+                    HStack(spacing: 12) {
+                        Image(systemName: "scope").opacity(isActive ? 1 : 0.15)
                         Text(p.name)
-                            .fontWeight(p.id == currentPlayer.id ? .bold : .regular)
+                            .fontWeight(isActive ? .semibold : .regular)
                         Spacer()
                         Text("\(totalsByPlayer[p.id, default: 0])")
                             .monospacedDigit()
-                            .font(.title3)
-                            .foregroundStyle(p.id == currentPlayer.id ? .primary : .secondary)
+                            .font(isActive ? .title3.weight(.semibold) : .title3)
+                            .foregroundStyle(isActive ? .primary : .secondary)
                     }
+                    .activeHighlight(isActive)
                 }
             }
             .padding()
             .background(.thinMaterial)
             .clipShape(RoundedRectangle(cornerRadius: 12))
+            .animation(.snappy, value: currentPlayerIndex)
+
+
+            // Box score grid (stable)
+            BaseballBoxScore(rows: boxScoreRows)
 
             BaseballHitPad(inning: currentInning, darts: $darts)
 
@@ -72,21 +118,14 @@ struct BaseballScoringView: View {
             if let message {
                 Text(message).font(.footnote).foregroundStyle(.secondary)
             }
-
             Spacer()
         }
         .padding()
         .navigationTitle("Baseball")
         .onAppear {
-            // If we already finished (resume case), ensure winner is set and UI reflects it
-            if leg.turns.count >= (9 * max(pCount, 1)) {
-                finalizeWinnerIfNeeded()
-            }
+            // If resumed past 9 innings, ensure winner
+            if turnsSoFar >= (9 * max(pCount, 1)) { finalizeWinnerIfNeeded() }
         }
-    }
-
-    private var legIsOver: Bool {
-        leg.turns.count >= (9 * max(pCount, 1)) || leg.winner != nil
     }
 
     private var header: some View {
@@ -106,51 +145,99 @@ struct BaseballScoringView: View {
     private func submitTurn() {
         guard !legIsOver else { return }
 
-        // In Baseball: single=1, double=2, triple=3 regardless of inning number
-        let points = darts.reduce(0) { $0 + $1.multiplier }   // ignore Dart.value for Baseball
+        let points = darts.reduce(0) { $0 + $1.multiplier }   // S=1, D=2, T=3, Miss=0
+        let seq = turnsSoFar
+        let inn = currentInning
 
-        let t = Turn(player: currentPlayer, darts: darts, total: points, bust: false)
+        let t = Turn(
+            player: currentPlayer,
+            darts: darts,
+            total: points,
+            bust: false,
+            sequence: leg.turns.count,   // ✅
+            inning: currentInning        // ✅
+        )
         leg.turns.append(t)
         darts.removeAll()
-
         message = "Scored \(points) point\(points == 1 ? "" : "s")"
         try? context.save()
 
-        // If we just finished the last player of the 9th inning, finalize
-        if leg.turns.count >= (9 * max(pCount, 1)) {
+        if turnsSoFar >= (9 * max(pCount, 1)) {
             finalizeWinnerIfNeeded()
         }
     }
 
     private func finalizeWinnerIfNeeded() {
-        // Highest total wins (simple rules; you can add tie-breakers later)
-        var best: (Player, Int)? = nil
-        for p in players {
-            let total = totalsByPlayer[p.id, default: 0]
-            if best == nil || total > best!.1 {
-                best = (p, total)
-            }
-        }
-        if let winner = best?.0 {
-            leg.winner = winner
-            message = "Game over — \(winner.name) wins!"
+        let rows = boxScoreRows
+        guard !rows.isEmpty else { return }
+        let winnerRow = rows.max(by: { $0.total < $1.total })
+        if let w = winnerRow?.player {
+            leg.winner = w
+            message = "Game over — \(w.name) wins!"
             try? context.save()
         }
     }
 
     private func undoTurn() {
-        guard let last = leg.turns.popLast() else { return }
-        darts.removeAll()
-        message = "Undid \(last.player.name)’s last turn."
-        leg.winner = nil
-        try? context.save()
+        guard !leg.turns.isEmpty else { return }
+        // Remove the highest-sequence turn (true "last" turn)
+        if let lastSeq = sortedTurns.last?.sequence,
+           let idx = leg.turns.firstIndex(where: { $0.sequence == lastSeq }) {
+            let last = leg.turns.remove(at: idx)
+            message = "Undid \(last.player.name)’s last turn."
+            leg.winner = nil
+            darts.removeAll()
+            try? context.save()
+        }
     }
 }
 
-// MARK: - Simple S/D/T input for current inning
+// MARK: - Box score view (unchanged API, new data source)
+private struct BaseballBoxScore: View {
+    let rows: [(player: Player, innings: [Int], total: Int)]
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 8) {
+                GridRow {
+                    Text("Player").font(.caption.bold()).frame(minWidth: 90, alignment: .leading)
+                    ForEach(1...9, id: \.self) { i in
+                        Text("\(i)").font(.caption.bold()).frame(width: 28, alignment: .trailing)
+                    }
+                    Text("T").font(.caption.bold()).frame(width: 36, alignment: .trailing)
+                }
+                Divider().gridCellUnsizedAxes(.horizontal)
+
+                ForEach(rows, id: \.player.id) { row in
+                    GridRow {
+                        Text(row.player.name).frame(minWidth: 90, alignment: .leading)
+                        ForEach(0..<9, id: \.self) { idx in
+                            Text("\(row.innings[idx])")
+                                .monospacedDigit()
+                                .frame(width: 28, alignment: .trailing)
+                                .foregroundStyle(.secondary)
+                        }
+                        Text("\(row.total)")
+                            .monospacedDigit()
+                            .frame(width: 36, alignment: .trailing)
+                            .font(.headline)
+                    }
+                    .padding(.vertical, 2)
+                    Divider().gridCellUnsizedAxes(.horizontal)
+                }
+            }
+            .padding(12)
+            .background(.ultraThinMaterial)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+        }
+        .frame(maxHeight: 180)
+    }
+}
+
+// MARK: - Hit pad (unchanged)
 private struct BaseballHitPad: View {
     let inning: Int
-    @Binding var darts: [Dart]   // we’ll store S/D/T as Dart(multiplier: 1/2/3); segment=inning
+    @Binding var darts: [Dart]
 
     var body: some View {
         VStack(spacing: 8) {
@@ -174,7 +261,6 @@ private struct BaseballHitPad: View {
 
     private func add(multiplier: Int) {
         guard darts.count < 3 else { return }
-        // segment stored as inning; value is unused by Baseball scoring logic
         let seg = multiplier == 0 ? 0 : inning
         let m   = multiplier == 0 ? 0 : multiplier
         darts.append(Dart(segment: seg, multiplier: m))
