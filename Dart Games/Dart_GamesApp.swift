@@ -12,8 +12,9 @@ import SwiftData
 struct Dart_GamesApp: App {
     var body: some Scene {
         WindowGroup {
-            DashboardView()
+            SplashGate()
         }
         .modelContainer(for: [Player.self, Match.self, Leg.self, Turn.self, Dart.self])
     }
 }
+

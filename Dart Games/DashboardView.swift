@@ -13,6 +13,9 @@ struct DashboardView: View {
     @Environment(\.modelContext) private var context
     @Query(sort: \Match.createdAt, order: .reverse) private var recentMatches: [Match]
 
+    // NEW: programmatic nav for Surprise Me
+    @State private var surpriseRoute: GameType? = nil
+
     private let tiles: [GameType] = [.x01_301, .x01_501, .baseball, .cricket, .aroundTheWorld]
 
     var body: some View {
@@ -22,15 +25,31 @@ struct DashboardView: View {
                     Text("Darts Hub").font(.largeTitle.bold())
 
                     LazyVGrid(columns: [.init(.flexible()), .init(.flexible())], spacing: 16) {
+                        // Existing game tiles
                         ForEach(tiles) { type in
                             NavigationLink {
                                 MatchSetupView(gameType: type)
                             } label: {
-                                GameTile(title: type.displayName)
+                                GameTile(title: type.displayName) // default "target" icon
                                     .contentShape(Rectangle())
                             }
-                            .buttonStyle(PlainButtonStyle())    
+                            .buttonStyle(PlainButtonStyle())
                         }
+
+                        // NEW: Surprise Me tile
+                        Button {
+                            // pick a random game and navigate
+                            if let random = tiles.randomElement() {
+                                surpriseRoute = random
+                                #if canImport(UIKit)
+                                UIImpactFeedbackGenerator(style: .rigid).impactOccurred()
+                                #endif
+                            }
+                        } label: {
+                            GameTile(title: "Surprise Me", systemImage: "die.face.5.fill")
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(PlainButtonStyle())
                     }
 
                     if !recentMatches.isEmpty {
@@ -52,20 +71,28 @@ struct DashboardView: View {
                 }
                 .padding()
             }
+            // NEW: destination for Surprise Me navigation
+            .navigationDestination(item: $surpriseRoute) { game in
+                MatchSetupView(gameType: game)
+            }
         }
     }
 }
 
 struct GameTile: View {
     let title: String
+    var systemImage: String = "target" // NEW: customizable icon (keeps old calls working)
+
     var body: some View {
         ZStack {
             RoundedRectangle(cornerRadius: 16).fill(.thinMaterial)
             VStack(spacing: 8) {
-                Image(systemName: "target")
+                Image(systemName: systemImage)
                     .font(.system(size: 30, weight: .semibold))
                 Text(title).font(.headline)
-            }.padding(16)
-        }.frame(height: 110)
+            }
+            .padding(16)
+        }
+        .frame(height: 110)
     }
 }
